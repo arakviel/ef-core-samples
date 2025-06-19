@@ -18,12 +18,23 @@
 - Наслідування від абстрактного класу
 - Конфігурація сутностей через окремі класи
 
+### Sample3: Розширена блог-система з LINQ запитами
+
+Цей приклад демонструє розширену блог-систему з використанням Entity Framework Core та LINQ запитів:
+- Робота з SQLite та Lazy loading
+- Демонстрація різних типів LINQ запитів (базові, агрегатні, групування, з'єднання)
+- Використання Include для завантаження пов'язаних даних
+- Робота з ієрархічними даними (коментарі з відповідями)
+- Наповнення бази даних тестовими та фейковими даними (з використанням Bogus)
+- Використання Query Filters для фільтрації даних
+
 ## Зміст
 
 - [Entity Framework Core - Навчальні приклади](#entity-framework-core---навчальні-приклади)
   - [Приклади](#приклади)
     - [Sample1: Зв'язки між таблицями](#sample1-звязки-між-таблицями)
     - [Sample2: Блог з різними можливостями EF Core](#sample2-блог-з-різними-можливостями-ef-core)
+    - [Sample3: Розширена блог-система з LINQ запитами](#sample3-розширена-блог-система-з-linq-запитами)
   - [Зміст](#зміст)
   - [Огляд Entity Framework Core](#огляд-entity-framework-core)
   - [Типи зв'язків (Sample1)](#типи-звязків-sample1)
@@ -39,6 +50,15 @@
     - [ValueObjects (складні типи даних)](#valueobjects-складні-типи-даних)
     - [Ієрархічні дані](#ієрархічні-дані)
     - [Наслідування від абстрактного класу](#наслідування-від-абстрактного-класу)
+  - [LINQ запити та робота з даними (Sample3)](#linq-запити-та-робота-з-даними-sample3)
+    - [Структура бази даних](#структура-бази-даних)
+    - [Базові LINQ запити](#базові-linq-запити)
+    - [Агрегатні LINQ запити](#агрегатні-linq-запити)
+    - [LINQ запити з групуванням](#linq-запити-з-групуванням)
+    - [LINQ запити з з'єднанням таблиць](#linq-запити-з-зєднанням-таблиць)
+    - [Завантаження пов'язаних даних (Include)](#завантаження-повязаних-даних-include)
+    - [Наповнення бази даних тестовими даними](#наповнення-бази-даних-тестовими-даними)
+    - [Використання Bogus для генерації фейкових даних](#використання-bogus-для-генерації-фейкових-даних)
 
 ## Огляд Entity Framework Core
 
@@ -297,6 +317,275 @@ public class Post : Meta
 {
     public string Title { get; set; } = null!;
     public string Content { get; set; } = null!;
+}
+```
+
+## LINQ запити та робота з даними (Sample3)
+
+Sample3 демонструє розширену блог-систему з використанням Entity Framework Core та LINQ запитів. Цей приклад фокусується на демонстрації різних типів LINQ запитів та роботі з даними.
+
+### Структура бази даних
+
+База даних Sample3 містить наступні моделі:
+
+- **Author** - автор блогу
+- **Category** - категорія блогу
+- **Blog** - блог
+- **Post** - пост у блозі
+- **Comment** - коментар до посту (з можливістю відповідей на коментарі)
+- **Tag** - тег для постів
+- **PostTag** - проміжна таблиця для зв'язку багато-до-багатьох між Post і Tag
+
+Основні зв'язки між таблицями:
+
+```csharp
+// Модель блогу
+public class Blog
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = null!;
+    public string? Description { get; set; }
+    public string Slug { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+    public int AuthorId { get; set; }
+    public int CategoryId { get; set; }
+
+    // Навігаційні властивості
+    public virtual Author Author { get; set; } = null!;
+    public virtual Category Category { get; set; } = null!;
+    public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
+}
+
+// Модель поста
+public class Post
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = null!;
+    public string? Summary { get; set; }
+    public string Content { get; set; } = null!;
+    public string Slug { get; set; } = null!;
+    public string? ImageUrl { get; set; }
+    public int ViewCount { get; set; }
+    public bool IsPublished { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+    public int BlogId { get; set; }
+    public int AuthorId { get; set; }
+
+    // Навігаційні властивості
+    public virtual Blog Blog { get; set; } = null!;
+    public virtual Author Author { get; set; } = null!;
+    public virtual ICollection<Comment> Comments { get; set; } = new List<Comment>();
+    public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
+}
+```
+
+### Базові LINQ запити
+
+Sample3 демонструє базові LINQ запити, такі як фільтрація, сортування та проекція:
+
+```csharp
+// Фільтрація з Where
+var popularPosts = _context.Posts
+    .Where(p => p.ViewCount > 1000)
+    .ToList();
+
+// Сортування з OrderBy
+var orderedPosts = _context.Posts
+    .OrderByDescending(p => p.ViewCount)
+    .Take(3)
+    .ToList();
+
+// Проекція з Select
+var postTitles = _context.Posts
+    .Where(p => p.IsPublished)
+    .Select(p => new { p.Title, p.PublishedAt })
+    .ToList();
+```
+
+### Агрегатні LINQ запити
+
+Sample3 демонструє агрегатні LINQ запити, такі як Count, Sum, Average, Min та Max:
+
+```csharp
+// Count - кількість постів у кожному блозі
+var blogPostCounts = _context.Blogs
+    .Select(b => new
+    {
+        b.Title,
+        PostCount = b.Posts.Count
+    })
+    .ToList();
+
+// Sum - загальна кількість переглядів постів для кожного автора
+var authorViewCounts = _context.Authors
+    .Select(a => new
+    {
+        FullName = a.FirstName + " " + a.LastName,
+        TotalViews = a.Posts.Sum(p => p.ViewCount)
+    })
+    .ToList();
+
+// Average - середня кількість переглядів постів
+var averageViews = _context.Posts
+    .Where(p => p.IsPublished)
+    .Average(p => p.ViewCount);
+```
+
+### LINQ запити з групуванням
+
+Sample3 демонструє LINQ запити з групуванням:
+
+```csharp
+// Групування постів за авторами
+var postsByAuthor = _context.Posts
+    .GroupBy(p => p.Author)
+    .Select(g => new
+    {
+        Author = g.Key.FirstName + " " + g.Key.LastName,
+        Posts = g.ToList(),
+        PostCount = g.Count()
+    })
+    .OrderByDescending(x => x.PostCount)
+    .ToList();
+
+// Групування постів за місяцем публікації
+var postsByMonth = _context.Posts
+    .Where(p => p.PublishedAt != null)
+    .GroupBy(p => new { Month = p.PublishedAt!.Value.Month, Year = p.PublishedAt!.Value.Year })
+    .Select(g => new
+    {
+        Month = g.Key.Month,
+        Year = g.Key.Year,
+        Posts = g.ToList(),
+        PostCount = g.Count()
+    })
+    .OrderByDescending(x => x.Year)
+    .ThenByDescending(x => x.Month)
+    .ToList();
+```
+
+### LINQ запити з з'єднанням таблиць
+
+Sample3 демонструє LINQ запити з з'єднанням таблиць:
+
+```csharp
+// З'єднання таблиць з Join
+var postsWithAuthors = _context.Posts
+    .Join(
+        _context.Authors,
+        post => post.AuthorId,
+        author => author.Id,
+        (post, author) => new
+        {
+            PostTitle = post.Title,
+            AuthorName = author.FirstName + " " + author.LastName
+        })
+    .ToList();
+
+// Складний запит з підзапитами
+var authorStats = _context.Authors
+    .Select(a => new
+    {
+        AuthorName = a.FirstName + " " + a.LastName,
+        PostCount = a.Posts.Count,
+        CommentCount = a.Posts.SelectMany(p => p.Comments).Count(),
+        MostPopularPost = a.Posts.OrderByDescending(p => p.ViewCount).FirstOrDefault()
+    })
+    .ToList();
+```
+
+### Завантаження пов'язаних даних (Include)
+
+Sample3 демонструє завантаження пов'язаних даних за допомогою методу Include:
+
+```csharp
+// Простий Include
+var postsWithAuthors = _context.Posts
+    .Include(p => p.Author)
+    .Take(3)
+    .ToList();
+
+// Багаторівневий Include
+var blogsWithPostsAndComments = _context.Blogs
+    .Include(b => b.Posts)
+        .ThenInclude(p => p.Comments)
+    .Take(2)
+    .ToList();
+```
+
+### Наповнення бази даних тестовими даними
+
+Sample3 демонструє наповнення бази даних тестовими даними за допомогою класу BlogDataSeeder:
+
+```csharp
+public void SeedData()
+{
+    // Створення авторів
+    var authors = CreateAuthors();
+    _context.SaveChanges();
+
+    // Створення категорій
+    var categories = CreateCategories();
+    _context.SaveChanges();
+
+    // Створення блогів
+    var blogs = CreateBlogs(authors, categories);
+    _context.SaveChanges();
+
+    // Створення тегів
+    var tags = CreateTags();
+    _context.SaveChanges();
+
+    // Створення постів
+    var posts = CreatePosts(blogs, authors, tags);
+    _context.SaveChanges();
+
+    // Створення коментарів
+    CreateComments(posts);
+    _context.SaveChanges();
+}
+```
+
+### Використання Bogus для генерації фейкових даних
+
+Sample3 демонструє використання бібліотеки Bogus для генерації фейкових даних:
+
+```csharp
+// Генерація фейкових авторів
+private List<Author> GenerateAuthors(int count)
+{
+    var authorFaker = new Faker<Author>()
+        .RuleFor(a => a.FirstName, f => f.Name.FirstName())
+        .RuleFor(a => a.LastName, f => f.Name.LastName())
+        .RuleFor(a => a.Email, (f, a) => f.Internet.Email(a.FirstName, a.LastName))
+        .RuleFor(a => a.Bio, f => f.Lorem.Paragraphs(2))
+        .RuleFor(a => a.AvatarUrl, f => f.Internet.Avatar())
+        .RuleFor(a => a.RegisteredAt, f => f.Date.Past(2));
+
+    return authorFaker.Generate(count);
+}
+
+// Генерація фейкових постів
+private List<Post> GeneratePosts(int count, List<Author> authors, List<Blog> blogs, List<Tag> tags)
+{
+    var postFaker = new Faker<Post>()
+        .RuleFor(p => p.Title, f => f.Lorem.Sentence(5, 8))
+        .RuleFor(p => p.Slug, (f, p) => GenerateSlug(p.Title))
+        .RuleFor(p => p.Summary, f => f.Lorem.Paragraph())
+        .RuleFor(p => p.Content, f => string.Join("\n\n", f.Lorem.Paragraphs(5)))
+        .RuleFor(p => p.ImageUrl, f => f.Image.PicsumUrl())
+        .RuleFor(p => p.ViewCount, f => f.Random.Int(0, 1000))
+        .RuleFor(p => p.IsPublished, f => f.Random.Bool(0.8f))
+        .RuleFor(p => p.PublishedAt, f => f.Date.Past(1))
+        .RuleFor(p => p.CreatedAt, f => f.Date.Past(1))
+        .RuleFor(p => p.UpdatedAt, f => f.Date.Recent(30))
+        .RuleFor(p => p.Author, f => f.PickRandom(authors))
+        .RuleFor(p => p.Blog, f => f.PickRandom(blogs));
+
+    return postFaker.Generate(count);
 }
 ```
 
